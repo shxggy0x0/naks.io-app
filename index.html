@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naks.io - Land Tokenization Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-container" id="loginContainer">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="logo">
+                    <i class="fas fa-map-marked-alt"></i>
+                    <span class="logo-text">Naks.io</span>
+                </div>
+                <h2>Welcome to Naks.io</h2>
+                <p>Land Tokenization Platform</p>
+            </div>
+            
+            <div class="login-tabs">
+                <button class="tab-btn active" onclick="showLoginTab('login')">Login</button>
+                <button class="tab-btn" onclick="showLoginTab('register')">Register</button>
+            </div>
+            
+            <!-- Login Form -->
+            <form class="login-form active" id="loginForm">
+                <div class="form-group">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" name="email" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" name="password" placeholder="Enter your password" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginRole">Role</label>
+                    <select id="loginRole" name="role" required>
+                        <option value="">Select your role</option>
+                        <option value="landowner">Landowner</option>
+                        <option value="investor">Investor</option>
+                        <option value="verifier">Government Verifier</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary login-btn">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Login
+                </button>
+                
+                <!-- Quick Login Buttons for Demo -->
+                <div class="quick-login">
+                    <p>Quick Demo Login:</p>
+                    <div class="demo-buttons">
+                        <button class="btn btn-outline" onclick="quickLogin('landowner@demo.com', 'password123', 'landowner')">
+                            <i class="fas fa-user"></i> Landowner
+                        </button>
+                        <button class="btn btn-outline" onclick="quickLogin('investor@demo.com', 'password123', 'investor')">
+                            <i class="fas fa-chart-line"></i> Investor
+                        </button>
+                        <button class="btn btn-outline" onclick="quickLogin('verifier@demo.com', 'password123', 'verifier')">
+                            <i class="fas fa-user-shield"></i> Verifier
+                        </button>
+                        <button class="btn btn-outline" onclick="quickLogin('admin@demo.com', 'password123', 'admin')">
+                            <i class="fas fa-cog"></i> Admin
+                        </button>
+                    </div>
+                </div>
+            </form>
+            
+            <!-- Registration Form -->
+            <form class="login-form" id="registerForm">
+                <div class="form-group">
+                    <label for="regName">Full Name</label>
+                    <input type="text" id="regName" name="name" placeholder="Enter your full name" required>
+                </div>
+                <div class="form-group">
+                    <label for="regEmail">Email</label>
+                    <input type="email" id="regEmail" name="email" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                    <label for="regPassword">Password</label>
+                    <input type="password" id="regPassword" name="password" placeholder="Create a password" required>
+                </div>
+                <div class="form-group">
+                    <label for="regConfirmPassword">Confirm Password</label>
+                    <input type="password" id="regConfirmPassword" name="confirmPassword" placeholder="Confirm your password" required>
+                </div>
+                <div class="form-group">
+                    <label for="regRole">Role</label>
+                    <select id="regRole" name="role" required>
+                        <option value="">Select your role</option>
+                        <option value="landowner">Landowner</option>
+                        <option value="investor">Investor</option>
+                        <option value="verifier">Government Verifier</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="regPhone">Phone Number</label>
+                    <input type="tel" id="regPhone" name="phone" placeholder="Enter your phone number" required>
+                </div>
+                <button type="submit" class="btn btn-primary login-btn">
+                    <i class="fas fa-user-plus"></i>
+                    Register
+                </button>
+            </form>
+            
+            <div class="login-footer">
+                <p>By continuing, you agree to our Terms of Service and Privacy Policy</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard (Hidden initially) -->
+    <div class="dashboard-container" id="dashboardContainer" style="display: none;">
+        <!-- Top Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-left">
+                <div class="logo">
+                    <i class="fas fa-map-marked-alt"></i>
+                    <span class="logo-text">Naks.io</span>
+                </div>
+                <div class="user-role-badge" id="userRoleBadge">
+                    <i class="fas fa-user-shield"></i>
+                    <span>Admin</span>
+                </div>
+            </div>
+            <div class="nav-right">
+                <div class="nav-item">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge">3</span>
+                </div>
+                <div class="nav-item logout-btn" onclick="logout()" title="Logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </div>
+                <div class="nav-item user-profile" onclick="showProfile()">
+                    <img src="https://via.placeholder.com/32x32/007BFF/FFFFFF?text=U" alt="User" class="profile-img" id="userProfileImg">
+                    <span class="username" id="userDisplayName">User</span>
+                </div>
+            </div>
+        </nav>
+
+        <div class="main-layout">
+            <!-- Left Sidebar -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav" id="sidebarNav">
+                    <!-- Dynamic navigation based on user role -->
+                </nav>
+            </aside>
+
+            <!-- Main Content Area -->
+            <main class="main-content">
+                <!-- Dashboard Section -->
+                <div class="content-section active" id="dashboard">
+                    <div class="content-header">
+                        <h1>Dashboard</h1>
+                        <p>Land tokenization overview and statistics</p>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-file-alt"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>12</h3>
+                                <p>Pending Surveys</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>47</h3>
+                                <p>Approved Tokens</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-coins"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>₹8.2M</h3>
+                                <p>Total Value</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-map-marked-alt"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>15</h3>
+                                <p>Active Plots</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="recent-activity">
+                        <h2>Recent Activity</h2>
+                        <div class="activity-list">
+                            <div class="activity-item">
+                                <div class="activity-icon success">
+                                    <i class="fas fa-check"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <p>Survey #392 approved and tokenized</p>
+                                    <small>2 hours ago</small>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon warning">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <p>Survey pending review</p>
+                                    <small>1 day ago</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Government Ingestion Section -->
+                <div class="content-section" id="ingestion">
+                    <div class="content-header">
+                        <h1>Government Data Ingestion</h1>
+                        <p>Import government JSON/PDF, compute hashes, and auto-map to plots</p>
+                    </div>
+                    <div class="search-container">
+                        <div class="search-form">
+                            <div class="form-actions" style="justify-content: space-between; align-items: center;">
+                                <div>
+                                    <input type="file" id="govJsonInput" accept="application/json" style="display: none;">
+                                    <button class="btn btn-primary" id="govJsonIngestBtn">
+                                        <i class="fas fa-file-import"></i>
+                                        Ingest Government JSON
+                                    </button>
+                                </div>
+                                <div>
+                                    <button class="btn btn-outline" onclick="showSection('settings')">
+                                        <i class="fas fa-link"></i>
+                                        Go to Anchor Batch
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="search-results" id="govDocsList"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Survey Upload Section -->
+                <div class="content-section" id="upload">
+                    <div class="content-header">
+                        <h1>Survey Upload</h1>
+                        <p>Upload land ownership and survey documents for tokenization</p>
+                    </div>
+                    <div class="upload-container">
+                        <div class="upload-form">
+                            <form id="surveyForm">
+                                <div class="form-section">
+                                    <h3>Land Details</h3>
+                                    <div class="form-grid">
+                            <div class="form-group">
+                                <label for="district">District</label>
+                                <select id="district" name="district" required>
+                                    <option value="">Select District</option>
+                                    <option value="bagalkote">BAGALKOTE</option>
+                                    <option value="ballari">BALLARI</option>
+                                    <option value="bangalore-rural">BANGALORE RURAL</option>
+                                    <option value="belagavi">BELAGAVI</option>
+                                    <option value="bengaluru">BENGALURU</option>
+                                    <option value="bengaluru-south">BENGALURU SOUTH</option>
+                                    <option value="bidar">BIDAR</option>
+                                    <option value="chamarajanagara">CHAMARAJANAGARA</option>
+                                    <option value="chikkaballapur">CHIKKABALLAPUR</option>
+                                    <option value="chikkamagaluru">CHIKKAMAGALURU</option>
+                                    <option value="chitradurga">CHITRADURGA</option>
+                                    <option value="dakshina-kannada">DAKSHINA KANNADA</option>
+                                    <option value="davanagere">DAVANAGERE</option>
+                                    <option value="dharwad">DHARWAD</option>
+                                    <option value="gadag">GADAG</option>
+                                    <option value="hassan">HASSAN</option>
+                                    <option value="haveri">HAVERI</option>
+                                    <option value="kalaburagi">KALABURAGI</option>
+                                    <option value="kodagu">KODAGU</option>
+                                    <option value="kolar">KOLAR</option>
+                                    <option value="koppal">KOPPAL</option>
+                                    <option value="mandya">MANDYA</option>
+                                    <option value="mysore">MYSORE</option>
+                                    <option value="raichur">RAICHUR</option>
+                                    <option value="ramanagara">RAMANAGARA</option>
+                                    <option value="shivamogga">SHIVAMOGGA</option>
+                                    <option value="tumakuru">TUMAKURU</option>
+                                    <option value="udupi">UDUPI</option>
+                                    <option value="uttar-kannada">UTTAR KANNADA</option>
+                                    <option value="vijayanagara">VIJAYANAGARA</option>
+                                    <option value="vijayapura">VIJAYAPURA</option>
+                                    <option value="yadagir">YADAGIR</option>
+                                </select>
+                            </div>
+                                        <div class="form-group">
+                                            <label for="taluk">Taluk</label>
+                                            <select id="taluk" name="taluk" required>
+                                                <option value="">Select Taluk</option>
+                                                <option value="bangalore-south">Bangalore South</option>
+                                                <option value="bangalore-north">Bangalore North</option>
+                                                <option value="bangalore-east">Bangalore East</option>
+                                                <option value="bangalore-west">Bangalore West</option>
+                                                <option value="yelahanka">Yelahanka</option>
+                                                <option value="kr-puram">KR Puram</option>
+                                                <option value="dasarahalli">Dasarahalli</option>
+                                                <option value="bommanahalli">Bommanahalli</option>
+                                                <option value="rajajinagar">Rajajinagar</option>
+                                                <option value="mahadevapura">Mahadevapura</option>
+                                                <option value="malleshwaram">Malleshwaram</option>
+                                                <option value="rajarajeshwari-nagar">Rajarajeshwari Nagar</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="hobli">Hobli</label>
+                                            <select id="hobli" name="hobli" required>
+                                                <option value="">Select Hobli</option>
+                                                <option value="hobli1">Hobli 1</option>
+                                                <option value="hobli2">Hobli 2</option>
+                                                <option value="hobli3">Hobli 3</option>
+                                                <option value="hobli4">Hobli 4</option>
+                                                <option value="hobli5">Hobli 5</option>
+                                                <option value="hobli6">Hobli 6</option>
+                                                <option value="hobli7">Hobli 7</option>
+                                                <option value="hobli8">Hobli 8</option>
+                                                <option value="hobli9">Hobli 9</option>
+                                                <option value="hobli10">Hobli 10</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="village">Village</label>
+                                            <select id="village" name="village" required>
+                                                <option value="">Select Village</option>
+                                                <option value="village1">Village 1</option>
+                                                <option value="village2">Village 2</option>
+                                                <option value="village3">Village 3</option>
+                                                <option value="village4">Village 4</option>
+                                                <option value="village5">Village 5</option>
+                                                <option value="village6">Village 6</option>
+                                                <option value="village7">Village 7</option>
+                                                <option value="village8">Village 8</option>
+                                                <option value="village9">Village 9</option>
+                                                <option value="village10">Village 10</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="surnoc">Surnoc</label>
+                                            <select id="surnoc" name="surnoc" required>
+                                                <option value="">Select Surnoc</option>
+                                                <option value="surnoc1">Surnoc 1</option>
+                                                <option value="surnoc2">Surnoc 2</option>
+                                                <option value="surnoc3">Surnoc 3</option>
+                                                <option value="surnoc4">Surnoc 4</option>
+                                                <option value="surnoc5">Surnoc 5</option>
+                                                <option value="surnoc6">Surnoc 6</option>
+                                                <option value="surnoc7">Surnoc 7</option>
+                                                <option value="surnoc8">Surnoc 8</option>
+                                                <option value="surnoc9">Surnoc 9</option>
+                                                <option value="surnoc10">Surnoc 10</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="hissa">Hissa No</label>
+                                            <select id="hissa" name="hissa" required>
+                                                <option value="">Select Hissa No</option>
+                                                <option value="hissa1">Hissa 1</option>
+                                                <option value="hissa2">Hissa 2</option>
+                                                <option value="hissa3">Hissa 3</option>
+                                                <option value="hissa4">Hissa 4</option>
+                                                <option value="hissa5">Hissa 5</option>
+                                                <option value="hissa6">Hissa 6</option>
+                                                <option value="hissa7">Hissa 7</option>
+                                                <option value="hissa8">Hissa 8</option>
+                                                <option value="hissa9">Hissa 9</option>
+                                                <option value="hissa10">Hissa 10</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="period">Period</label>
+                                            <select id="period" name="period" required>
+                                                <option value="">Select Period</option>
+                                                <option value="2024">2024</option>
+                                                <option value="2023">2023</option>
+                                                <option value="2022">2022</option>
+                                                <option value="2021">2021</option>
+                                                <option value="2020">2020</option>
+                                                <option value="2019">2019</option>
+                                                <option value="2018">2018</option>
+                                                <option value="2017">2017</option>
+                                                <option value="2016">2016</option>
+                                                <option value="2015">2015</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="surveyNumber">Survey Number</label>
+                                            <input type="text" id="surveyNumber" name="surveyNumber" placeholder="Enter Survey Number" required>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-section">
+                                    <h3>Document Upload</h3>
+                                    <div class="upload-area" id="uploadArea">
+                                        <i class="fas fa-cloud-upload-alt"></i>
+                                        <p>Drag & drop documents here or click to browse</p>
+                                        <small>Supported formats: PDF, JPG, PNG (Max 10MB)</small>
+                                        <input type="file" id="fileInput" multiple accept=".pdf,.jpg,.png" style="display: none;">
+                                    </div>
+                                    <div class="uploaded-files" id="uploadedFiles"></div>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-upload"></i>
+                                        Upload Survey
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" onclick="clearForm()">
+                                        <i class="fas fa-times"></i>
+                                        Clear
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map View Section -->
+                <div class="content-section" id="map">
+                    <div class="content-header">
+                        <h1>Map View</h1>
+                        <p>Interactive map showing tokenized land parcels</p>
+                    </div>
+                    <div class="map-container">
+                        <div class="map-controls">
+                            <button class="map-btn active" id="polygonTool">
+                                <i class="fas fa-draw-polygon"></i>
+                                Draw Boundary
+                            </button>
+                            <button class="map-btn" id="panTool">
+                                <i class="fas fa-hand-paper"></i>
+                                Pan
+                            </button>
+                            <button class="map-btn" id="zoomTool">
+                                <i class="fas fa-search-plus"></i>
+                                Zoom
+                            </button>
+                            <button class="map-btn" id="superZoomTool">
+                                <i class="fas fa-search-plus"></i>
+                                Super Zoom
+                            </button>
+                        </div>
+                        <div id="mapCanvas" class="map">
+                            <div class="map-loading" id="mapLoading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Loading map...</p>
+                            </div>
+                        </div>
+                        <div class="map-legend">
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #007BFF;"></div>
+                                <span>Tokenized Land</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #28a745;"></div>
+                                <span>Approved</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #ffc107;"></div>
+                                <span>Pending</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Property (Public/Role-based) Section -->
+                <div class="content-section" id="property">
+                    <div class="content-header">
+                        <h1>Property</h1>
+                        <p>Verification badges powered by privacy-preserving proofs</p>
+                    </div>
+                    <div class="property-search">
+                        <div class="search-input-group">
+                            <input type="text" id="propertySearchInput" placeholder="Enter Token ID or Plot Code (e.g., NAK-2024-..., NKS-....)" class="search-input">
+                            <button class="btn btn-primary" onclick="propertySearch()">
+                                <i class="fas fa-search"></i>
+                                Search
+                            </button>
+                        </div>
+                        <div class="property-search-results" id="propertySearchResults"></div>
+                    </div>
+                    <div class="property-page" id="propertyPage">
+                        <!-- Dynamic property content -->
+                    </div>
+                </div>
+
+                <!-- Consent Center (Owner controls) -->
+                <div class="content-section" id="consent">
+                    <div class="content-header">
+                        <h1>Consent Center</h1>
+                        <p>Control who can access your sensitive documents</p>
+                    </div>
+                    <div class="consent-center" id="consentCenter">
+                        <!-- Dynamic consent requests -->
+                    </div>
+                </div>
+
+                <!-- Approvals Section -->
+                <div class="content-section" id="approvals">
+                    <div class="content-header">
+                        <h1>Approvals</h1>
+                        <p>Review and approve pending survey submissions</p>
+                    </div>
+                    <div class="approvals-list" id="approvalsList">
+                        <!-- Dynamic content will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Profile Section -->
+                <div class="content-section" id="profile">
+                    <div class="content-header">
+                        <h1>Profile</h1>
+                        <p>Manage your account information and preferences</p>
+                    </div>
+                    <div class="profile-section">
+                        <div class="profile-header">
+                            <div class="profile-avatar" id="profileAvatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div class="profile-info">
+                                <h3 id="profileName">User Name</h3>
+                                <p id="profileRole">Role</p>
+                            </div>
+                        </div>
+                        <div class="profile-details" id="profileDetails">
+                            <!-- Dynamic content -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search Section -->
+                <div class="content-section" id="search">
+                    <div class="content-header">
+                        <h1>Search Land Records</h1>
+                        <p>Search for tokenized land records by Token ID, Plot Code, or Survey Number</p>
+                    </div>
+                    <div class="search-container">
+                        <div class="search-form">
+                            <div class="search-tabs">
+                                <button class="search-tab-btn active" onclick="showSearchTab('token')">Token ID</button>
+                                <button class="search-tab-btn" onclick="showSearchTab('plot')">Plot Code</button>
+                                <button class="search-tab-btn" onclick="showSearchTab('survey')">Survey Number</button>
+                            </div>
+                            
+                            <div class="search-input-section">
+                                <div class="search-input-group">
+                                    <input type="text" id="searchInput" placeholder="Enter Token ID, Plot Code, or Survey Number" class="search-input">
+                                    <button class="btn btn-primary search-btn" onclick="performSearch()">
+                                        <i class="fas fa-search"></i>
+                                        Search
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="search-results" id="searchResults">
+                                <!-- Search results will be displayed here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Section -->
+                <div class="content-section" id="settings">
+                    <div class="content-header">
+                        <h1>Settings</h1>
+                        <p>Configure platform settings and preferences</p>
+                    </div>
+                    <div class="settings-container">
+                        <div class="settings-section">
+                            <h3>Blockchain Configuration</h3>
+                            <div class="setting-item">
+                                <label>Network</label>
+                                <select>
+                                    <option>Polygon Mumbai Testnet</option>
+                                    <option>Ethereum Mainnet</option>
+                                </select>
+                            </div>
+                            <div class="setting-item">
+                                <label>Contract Address</label>
+                                <input type="text" value="0x1234...5678" readonly>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>IPFS Configuration</h3>
+                            <div class="setting-item">
+                                <label>Gateway</label>
+                                <input type="text" value="https://gateway.pinata.cloud/ipfs/" readonly>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h3>Anchoring</h3>
+                            <div class="setting-item" style="justify-content: flex-start; gap: 1rem;">
+                                <button class="btn btn-primary" id="anchorBatchBtn">
+                                    <i class="fas fa-anchor"></i>
+                                    Anchor Pending Batch (Merkle Root)
+                                </button>
+                                <span>Anchors pending document and encumbrance hashes on-chain.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Token Details Modal -->
+    <div class="modal" id="tokenModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Token Details</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="tokenDetails">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Encrypted ID Card Modal -->
+    <div class="modal" id="idCardModal">
+        <div class="modal-content id-card-modal">
+            <div class="modal-header">
+                <h2>Digital Ownership Certificate</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="id-card" id="idCard">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
