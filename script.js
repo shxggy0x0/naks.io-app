@@ -78,6 +78,8 @@ document.addEventListener('DOMContentLoaded', function() {
     loadMockData();
     loadPersistentStores();
     checkAuthStatus();
+    // Expose logo download
+    window.downloadLogoPng = downloadLogoPng;
 });
 
 // Initialize application
@@ -2393,6 +2395,76 @@ function showNotification(message, type = 'info') {
         notification.classList.remove('show');
         setTimeout(() => notification.remove(), 300);
     }, 3000);
+}
+
+// ===== Assets: Export Logo as PNG =====
+function downloadLogoPng() {
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    // Transparent background
+    ctx.clearRect(0, 0, size, size);
+
+    // Draw rounded square base
+    const baseSize = 400;
+    const baseX = (size - baseSize) / 2;
+    const baseY = (size - baseSize) / 2;
+    const radius = 40;
+    roundedRect(ctx, baseX, baseY, baseSize, baseSize, radius);
+    ctx.fillStyle = '#007BFF';
+    ctx.fill();
+
+    // Draw simple map/pin glyph (geometric)
+    ctx.save();
+    ctx.translate(size / 2, size / 2 - 30);
+    // Pin body
+    ctx.beginPath();
+    ctx.moveTo(0, -110);
+    ctx.quadraticCurveTo(90, -110, 90, -20);
+    ctx.quadraticCurveTo(90, 30, 0, 120);
+    ctx.quadraticCurveTo(-90, 30, -90, -20);
+    ctx.quadraticCurveTo(-90, -110, 0, -110);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    // Inner circle
+    ctx.beginPath();
+    ctx.arc(0, -40, 28, 0, Math.PI * 2);
+    ctx.fillStyle = '#007BFF';
+    ctx.fill();
+    ctx.restore();
+
+    // Brand text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 72px Inter, Segoe UI, Roboto, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Naks.io', size / 2, size - 90);
+
+    // Trigger download
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'naksio-logo.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+function roundedRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
 }
 
 function loadMockData() {
