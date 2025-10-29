@@ -21,10 +21,6 @@
                 <div class="logo">
                     <i class="fas fa-map-marked-alt"></i>
                     <span class="logo-text">Naks.io</span>
-                    <button class="btn btn-outline" style="margin-left: 1rem; padding: 0.35rem 0.75rem; font-size: 0.85rem;" onclick="downloadLogoPng()">
-                        <i class="fas fa-download"></i>
-                        PNG
-                    </button>
                 </div>
                 <h2>Welcome to Naks.io</h2>
                 <p>Land Tokenization Platform</p>
@@ -49,10 +45,9 @@
                     <label for="loginRole">Role</label>
                     <select id="loginRole" name="role" required>
                         <option value="">Select your role</option>
-                        <option value="landowner">Landowner</option>
-                        <option value="investor">Investor</option>
-                        <option value="verifier">Government Verifier</option>
+                        <option value="user">User</option>
                         <option value="admin">Admin</option>
+                        <option value="client">Client</option>
                     </select>
                 </div>
                 <button type="submit" class="btn btn-primary login-btn">
@@ -64,14 +59,8 @@
                 <div class="quick-login">
                     <p>Quick Demo Login:</p>
                     <div class="demo-buttons">
-                        <button class="btn btn-outline" onclick="quickLogin('landowner@demo.com', 'password123', 'landowner')">
-                            <i class="fas fa-user"></i> Landowner
-                        </button>
-                        <button class="btn btn-outline" onclick="quickLogin('investor@demo.com', 'password123', 'investor')">
-                            <i class="fas fa-chart-line"></i> Investor
-                        </button>
-                        <button class="btn btn-outline" onclick="quickLogin('verifier@demo.com', 'password123', 'verifier')">
-                            <i class="fas fa-user-shield"></i> Verifier
+                        <button class="btn btn-outline" onclick="quickLogin('user@demo.com', 'password123', 'user')">
+                            <i class="fas fa-user"></i> User
                         </button>
                         <button class="btn btn-outline" onclick="quickLogin('admin@demo.com', 'password123', 'admin')">
                             <i class="fas fa-cog"></i> Admin
@@ -102,9 +91,9 @@
                     <label for="regRole">Role</label>
                     <select id="regRole" name="role" required>
                         <option value="">Select your role</option>
-                        <option value="landowner">Landowner</option>
-                        <option value="investor">Investor</option>
-                        <option value="verifier">Government Verifier</option>
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                        <option value="client">Client</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -414,6 +403,23 @@
                                         </div>
                                     </div>
                                 </div>
+                            <div class="form-section">
+                                <h3>Draw Land Boundary</h3>
+                                <p style="margin-bottom: 0.75rem; color:#64748b;">Use the polygon tool to outline the parcel.</p>
+                                <div class="map-container">
+                                    <div class="map-controls">
+                                        <button class="map-btn" type="button" id="uploadPolygonTool">
+                                            <i class="fas fa-draw-polygon"></i>
+                                            Draw Boundary
+                                        </button>
+                                        <button class="map-btn" type="button" id="uploadZoomTool">
+                                            <i class="fas fa-search-plus"></i>
+                                            Zoom
+                                        </button>
+                                    </div>
+                                    <div id="uploadMapCanvas" class="map"></div>
+                                </div>
+                            </div>
                                 <div class="form-section">
                                     <h3>Document Upload</h3>
                                     <div class="upload-area" id="uploadArea">
@@ -519,6 +525,23 @@
                     </div>
                 </div>
 
+                <!-- My Submissions Section -->
+                <div class="content-section" id="submissions">
+                    <div class="content-header">
+                        <h1>My Submissions</h1>
+                        <p>Track your submitted surveys and their status</p>
+                    </div>
+                    <div id="submissionsCongrats" style="display:none; margin-bottom:1rem;">
+                        <div class="notification notification-success show">
+                            <i class="fas fa-check-circle"></i>
+                            <span id="submissionsCongratsText">Congratulations! Your submission was approved.</span>
+                        </div>
+                    </div>
+                    <div class="approvals-list" id="submissionsList">
+                        <!-- User submissions render here -->
+                    </div>
+                </div>
+
                 <!-- Approvals Section -->
                 <div class="content-section" id="approvals">
                     <div class="content-header">
@@ -527,6 +550,17 @@
                     </div>
                     <div class="approvals-list" id="approvalsList">
                         <!-- Dynamic content will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Client Access Section -->
+                <div class="content-section" id="access">
+                    <div class="content-header">
+                        <h1>My Access</h1>
+                        <p>Datasets you have been granted access to</p>
+                    </div>
+                    <div class="approvals-list" id="accessList">
+                        <!-- Granted items appear here -->
                     </div>
                 </div>
 
@@ -549,6 +583,17 @@
                         <div class="profile-details" id="profileDetails">
                             <!-- Dynamic content -->
                         </div>
+                    </div>
+                </div>
+
+                <!-- Notifications Section -->
+                <div class="content-section" id="notifications">
+                    <div class="content-header">
+                        <h1>Notifications</h1>
+                        <p>Recent activity and updates</p>
+                    </div>
+                    <div class="approvals-list" id="notificationsList">
+                        <!-- Activity items will render here -->
                     </div>
                 </div>
 

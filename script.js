@@ -1,3 +1,46 @@
+function renderSubmissions() {
+    const listEl = document.getElementById('submissionsList');
+    const congrats = document.getElementById('submissionsCongrats');
+    const congratsText = document.getElementById('submissionsCongratsText');
+    if (!listEl) return;
+    const email = userData?.email || '';
+    const mine = submissionsStore.filter(s => s.submittedBy === email);
+    if (mine.length === 0) {
+        listEl.innerHTML = '<div class="no-data">No submissions yet. Use Upload Survey to submit your first request.</div>';
+        if (congrats) congrats.style.display = 'none';
+        return;
+    }
+    // Show a congrats banner if any recently approved item (last 24h)
+    const now = Date.now();
+    const recentlyApproved = mine.find(s => s.status === 'approved' && now - new Date(s.updatedAt).getTime() < 24*3600*1000);
+    if (congrats) {
+        if (recentlyApproved) {
+            congrats.style.display = 'block';
+            if (congratsText) {
+                congratsText.textContent = `Congratulations! Your survey was approved. Token ID: ${recentlyApproved.tokenId || ''}`;
+            }
+        } else {
+            congrats.style.display = 'none';
+        }
+    }
+    listEl.innerHTML = mine.sort((a,b)=> new Date(b.updatedAt) - new Date(a.updatedAt)).map(s => `
+        <div class="approval-card">
+            <div class="approval-header">
+                <h3 class="approval-title">Survey #${s.details?.surveyNumber || ''}</h3>
+                <span class="status-badge ${s.status}">${s.status.toUpperCase()}</span>
+            </div>
+            <div class="approval-details">
+                <div class="detail-item"><span class="detail-label">District</span><span class="detail-value">${s.details?.district || ''}</span></div>
+                <div class="detail-item"><span class="detail-label">Village</span><span class="detail-value">${s.details?.village || ''}</span></div>
+                <div class="detail-item"><span class="detail-label">Updated</span><span class="detail-value">${new Date(s.updatedAt).toLocaleString()}</span></div>
+                ${s.tokenId ? `<div class="detail-item"><span class="detail-label">Token ID</span><span class="detail-value">${s.tokenId}</span></div>` : ''}
+            </div>
+            <div class="approval-actions">
+                ${s.status === 'approved' && s.plotCode ? `<button class="btn btn-outline" onclick="openPropertyDemo('${s.plotCode}','Property')"><i class=\"fas fa-eye\"></i> View</button>` : ''}
+            </div>
+        </div>
+    `).join('');
+}
 // ===== Property search (open to all users) =====
 function propertySearch() {
     const input = document.getElementById('propertySearchInput');
@@ -58,10 +101,13 @@ let tokenizedLands = [];
 let registeredUsers = [];
 let drawingMode = false;
 let drawnItems = null;
+let uploadMap = null;
+let uploadDrawnItems = null;
 
 // ZK and consent demo stores
 let zkClaimsStore = []; // { plotCode, claims: { ownershipVerified, cleanTitleCount, floodRiskOk, eqZoneOk, areaSqft, registered } , proof: {root, inputs} }
 let consentRequestsStore = []; // { id, plotCode, requesterRole, requesterName, requesterOrg, scope: ['ownerId','saleDeed'], status, ts }
+let clientAccessStore = []; // { clientEmail, plotCode, scope, approvedAt }
 
 // New domain stores (persisted in localStorage)
 let plotsStore = []; // Plot { plot_id, polygon_geojson, survey_no, village, district, gov_source_ids[], last_gov_fetch_ts, gov_hash }
@@ -70,6 +116,8 @@ let encumbranceRecordsStore = []; // EncumbranceRecord { encumbrance_id, type, s
 let verificationLogsStore = []; // VerificationLog { who, method, ts, proof_hash }
 let rawGovDocsStore = []; // { id, type: 'gov_json'|'gov_pdf', filename, size, hash, storedAt, rawRef }
 let anchorQueue = []; // array of hashes pending anchoring
+let submissionsStore = []; // { id, status, submittedBy, details, tokenId?, plotCode?, updatedAt }
+let activityStore = []; // { id, type, message, meta, ts }
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
@@ -78,8 +126,6 @@ document.addEventListener('DOMContentLoaded', function() {
     loadMockData();
     loadPersistentStores();
     checkAuthStatus();
-    // Expose logo download
-    window.downloadLogoPng = downloadLogoPng;
 });
 
 // Initialize application
@@ -97,6 +143,9 @@ function loadPersistentStores() {
     anchorQueue = JSON.parse(localStorage.getItem('naks_anchor_queue') || '[]');
     zkClaimsStore = JSON.parse(localStorage.getItem('naks_zk_claims') || '[]');
     consentRequestsStore = JSON.parse(localStorage.getItem('naks_consent_requests') || '[]');
+    clientAccessStore = JSON.parse(localStorage.getItem('naks_client_access') || '[]');
+    submissionsStore = JSON.parse(localStorage.getItem('naks_submissions') || '[]');
+    activityStore = JSON.parse(localStorage.getItem('naks_activity') || '[]');
 }
 
 function persistStores() {
@@ -108,6 +157,9 @@ function persistStores() {
     localStorage.setItem('naks_anchor_queue', JSON.stringify(anchorQueue));
     localStorage.setItem('naks_zk_claims', JSON.stringify(zkClaimsStore));
     localStorage.setItem('naks_consent_requests', JSON.stringify(consentRequestsStore));
+    localStorage.setItem('naks_client_access', JSON.stringify(clientAccessStore));
+    localStorage.setItem('naks_submissions', JSON.stringify(submissionsStore));
+    localStorage.setItem('naks_activity', JSON.stringify(activityStore));
 }
 
 // ===== Crypto & Merkle Utilities =====
@@ -140,7 +192,7 @@ function checkAuthStatus() {
     const savedUser = localStorage.getItem('naksio_user');
     if (savedUser) {
         userData = JSON.parse(savedUser);
-        currentUser = userData.role;
+        currentUser = (typeof normalizeRole === 'function') ? normalizeRole(userData.role) : userData.role;
         showDashboard();
     } else {
         showLogin();
@@ -198,6 +250,12 @@ function setupEventListeners() {
     if (panTool) panTool.addEventListener('click', () => activatePanTool());
     if (zoomTool) zoomTool.addEventListener('click', () => activateZoomTool());
     if (superZoomTool) superZoomTool.addEventListener('click', () => activateSuperZoomTool());
+
+    // Upload map controls
+    const uploadPolygonTool = document.getElementById('uploadPolygonTool');
+    const uploadZoomTool = document.getElementById('uploadZoomTool');
+    if (uploadPolygonTool) uploadPolygonTool.addEventListener('click', () => activateUploadPolygonTool());
+    if (uploadZoomTool) uploadZoomTool.addEventListener('click', () => activateUploadZoomTool());
 
     // Government ingestion (JSON-first)
     const govJsonInput = document.getElementById('govJsonInput');
@@ -287,8 +345,20 @@ function showSection(sectionName) {
             }, 100);
         }
     }
+    if (sectionName === 'upload') {
+        if (uploadMap) {
+            setTimeout(() => uploadMap.invalidateSize(), 100);
+        } else {
+            setTimeout(() => {
+                initializeUploadMap();
+            }, 150);
+        }
+    }
     if (sectionName === 'consent') {
         setTimeout(renderConsentCenter, 50);
+    }
+    if (sectionName === 'access') {
+        setTimeout(renderAccessList, 50);
     }
     if (sectionName === 'property') {
         // Auto-render a demo property if empty
@@ -299,6 +369,9 @@ function showSection(sectionName) {
                 openPropertyDemo(demoPlot.plotCode, 'Demo Property', demoPlot);
             }
         }, 50);
+    }
+    if (sectionName === 'submissions') {
+        setTimeout(renderSubmissions, 50);
     }
 }
 
@@ -328,7 +401,7 @@ function handleLogin(e) {
     if (user) {
         // Login successful
         userData = user;
-        currentUser = user.role;
+        currentUser = (typeof normalizeRole === 'function') ? normalizeRole(user.role) : user.role;
         localStorage.setItem('naksio_user', JSON.stringify(user));
         showNotification('Login successful!', 'success');
         showDashboard();
@@ -426,7 +499,7 @@ function quickLogin(email, password, role) {
     if (user) {
         // Login successful
         userData = user;
-        currentUser = user.role;
+        currentUser = (typeof normalizeRole === 'function') ? normalizeRole(user.role) : user.role;
         localStorage.setItem('naksio_user', JSON.stringify(user));
         showNotification('Login successful!', 'success');
         showDashboard();
@@ -530,9 +603,8 @@ function updateProfileDisplay() {
 
 function getRoleIcon(role) {
     switch(role) {
-        case 'landowner': return 'user';
-        case 'investor': return 'chart-line';
-        case 'verifier': return 'user-shield';
+        case 'user': return 'user';
+        case 'client': return 'eye';
         case 'admin': return 'user-shield';
         default: return 'user';
     }
@@ -553,31 +625,23 @@ function updateUserInterface() {
     // Update user info
     username.textContent = userData.name;
     
-    // Update role badge and profile image
+    // Update role badge and profile image for new roles
     switch(currentUser) {
-        case 'landowner':
-            roleBadge.innerHTML = '<i class="fas fa-user"></i><span>Landowner</span>';
-            profileImg.src = 'https://via.placeholder.com/32x32/28a745/FFFFFF?text=L';
+        case 'user':
+            roleBadge.innerHTML = '<i class="fas fa-user"></i><span>User</span>';
+            profileImg.src = 'https://via.placeholder.com/32x32/28a745/FFFFFF?text=U';
             break;
-        case 'investor':
-            roleBadge.innerHTML = '<i class="fas fa-chart-line"></i><span>Investor</span>';
-            profileImg.src = 'https://via.placeholder.com/32x32/ffc107/FFFFFF?text=I';
-            break;
-        case 'verifier':
-            roleBadge.innerHTML = '<i class="fas fa-user-shield"></i><span>Govt Verifier</span>';
-            profileImg.src = 'https://via.placeholder.com/32x32/dc3545/FFFFFF?text=V';
+        case 'client':
+            roleBadge.innerHTML = '<i class="fas fa-eye"></i><span>Client</span>';
+            profileImg.src = 'https://via.placeholder.com/32x32/6f42c1/FFFFFF?text=C';
             break;
         case 'admin':
             roleBadge.innerHTML = '<i class="fas fa-user-shield"></i><span>Admin</span>';
             profileImg.src = 'https://via.placeholder.com/32x32/007BFF/FFFFFF?text=A';
             break;
-        case 'bank':
-            roleBadge.innerHTML = '<i class="fas fa-building-columns"></i><span>Bank/NBFC</span>';
-            profileImg.src = 'https://via.placeholder.com/32x32/10b981/FFFFFF?text=B';
-            break;
-        case 'regulator':
-            roleBadge.innerHTML = '<i class="fas fa-scale-balanced"></i><span>Regulator</span>';
-            profileImg.src = 'https://via.placeholder.com/32x32/6f42c1/FFFFFF?text=R';
+        default:
+            roleBadge.innerHTML = `<i class="fas fa-${getRoleIcon(currentUser)}"></i><span>${(currentUser||'User').charAt(0).toUpperCase() + (currentUser||'user').slice(1)}</span>`;
+            profileImg.src = 'https://via.placeholder.com/32x32/007BFF/FFFFFF?text=U';
             break;
     }
     
@@ -593,67 +657,35 @@ function updateSidebarNavigation() {
     let navItems = [];
     
     switch(currentUser) {
-        case 'landowner':
+        case 'user':
             navItems = [
                 { icon: 'fas fa-tachometer-alt', text: 'Dashboard', section: 'dashboard' },
-                { icon: 'fas fa-shield-check', text: 'Property', section: 'property' },
+                { icon: 'fas fa-search', text: 'Property', section: 'property' },
                 { icon: 'fas fa-user-lock', text: 'Consent Center', section: 'consent' },
                 { icon: 'fas fa-upload', text: 'Upload Survey', section: 'upload' },
-                { icon: 'fas fa-map', text: 'My Land', section: 'map' },
                 { icon: 'fas fa-history', text: 'My Submissions', section: 'submissions' },
+                { icon: 'fas fa-bell', text: 'Notifications', section: 'notifications' },
                 { icon: 'fas fa-user', text: 'Profile', section: 'profile' }
             ];
             break;
-        case 'investor':
+        case 'client':
             navItems = [
                 { icon: 'fas fa-tachometer-alt', text: 'Dashboard', section: 'dashboard' },
-                { icon: 'fas fa-shield-check', text: 'Property', section: 'property' },
-                { icon: 'fas fa-map', text: 'Browse Land', section: 'map' },
-                { icon: 'fas fa-chart-line', text: 'Portfolio', section: 'portfolio' },
-                { icon: 'fas fa-coins', text: 'My Tokens', section: 'tokens' },
-                { icon: 'fas fa-user', text: 'Profile', section: 'profile' }
-            ];
-            break;
-        case 'verifier':
-            navItems = [
-                { icon: 'fas fa-tachometer-alt', text: 'Dashboard', section: 'dashboard' },
-                { icon: 'fas fa-shield-check', text: 'Property', section: 'property' },
-                { icon: 'fas fa-search', text: 'Verify Surveys', section: 'verify' },
-                { icon: 'fas fa-check-circle', text: 'Approvals', section: 'approvals' },
-                { icon: 'fas fa-map', text: 'Map View', section: 'map' },
+                { icon: 'fas fa-search', text: 'Property', section: 'property' },
+                { icon: 'fas fa-eye', text: 'My Access', section: 'access' },
                 { icon: 'fas fa-user', text: 'Profile', section: 'profile' }
             ];
             break;
         case 'admin':
             navItems = [
                 { icon: 'fas fa-tachometer-alt', text: 'Dashboard', section: 'dashboard' },
-                { icon: 'fas fa-shield-check', text: 'Property', section: 'property' },
+                { icon: 'fas fa-search', text: 'Property', section: 'property' },
                 { icon: 'fas fa-upload', text: 'Survey Upload', section: 'upload' },
-                { icon: 'fas fa-map', text: 'Map View', section: 'map' },
                 { icon: 'fas fa-check-circle', text: 'Approvals', section: 'approvals', badge: pendingApprovals.length },
                 { icon: 'fas fa-database', text: 'Gov Ingestion', section: 'ingestion' },
                 { icon: 'fas fa-search', text: 'Search Records', section: 'search' },
                 { icon: 'fas fa-cog', text: 'Settings', section: 'settings' },
                 { icon: 'fas fa-sign-out-alt', text: 'Logout', action: 'logout' }
-            ];
-            break;
-        case 'bank':
-            navItems = [
-                { icon: 'fas fa-tachometer-alt', text: 'Dashboard', section: 'dashboard' },
-                { icon: 'fas fa-shield-check', text: 'Property', section: 'property' },
-                { icon: 'fas fa-map', text: 'Map View', section: 'map' },
-                { icon: 'fas fa-search', text: 'Search Records', section: 'search' },
-                { icon: 'fas fa-user', text: 'Profile', section: 'profile' }
-            ];
-            break;
-        case 'regulator':
-            navItems = [
-                { icon: 'fas fa-tachometer-alt', text: 'Dashboard', section: 'dashboard' },
-                { icon: 'fas fa-shield-check', text: 'Property', section: 'property' },
-                { icon: 'fas fa-database', text: 'Gov Ingestion', section: 'ingestion' },
-                { icon: 'fas fa-search', text: 'Search Records', section: 'search' },
-                { icon: 'fas fa-map', text: 'Map View', section: 'map' },
-                { icon: 'fas fa-user', text: 'Profile', section: 'profile' }
             ];
             break;
     }
@@ -700,6 +732,9 @@ function handleSurveySubmit(e) {
         };
         
         pendingApprovals.push(approval);
+        // Track in submissions history
+        submissionsStore.push({ id: approvalId, status: 'pending', submittedBy: userData ? userData.email : 'anonymous', details: surveyData, updatedAt: new Date().toISOString() });
+        persistStores();
         updateApprovalsList();
         
         // Show success message
@@ -709,7 +744,7 @@ function handleSurveySubmit(e) {
         clearForm();
         
         // Switch to approvals section
-        showSection('approvals');
+        showSection('submissions');
     } else {
         showNotification('Please fill in all required fields.', 'error');
     }
@@ -805,7 +840,13 @@ function initializeMap() {
     
     try {
         // Initialize map centered on Bangalore with higher zoom
-        map = L.map('mapCanvas').setView([12.9716, 77.5946], 15);
+        map = L.map('mapCanvas', {
+            preferCanvas: true,
+            wheelDebounceTime: 35,
+            zoomAnimation: true,
+            updateWhenZooming: false,
+            updateWhenIdle: true
+        }).setView([12.9716, 77.5946], 15);
         console.log('Map created successfully');
         
         // Add tile layer with resilient fallback
@@ -845,6 +886,27 @@ function initializeMap() {
     }
 }
 
+function initializeUploadMap() {
+    const container = document.getElementById('uploadMapCanvas');
+    if (!container) return;
+    try {
+        uploadMap = L.map('uploadMapCanvas', {
+            preferCanvas: true,
+            wheelDebounceTime: 35,
+            zoomAnimation: true,
+            updateWhenZooming: false,
+            updateWhenIdle: true
+        }).setView([12.9716, 77.5946], 16);
+        addResilientTileLayerFor(uploadMap);
+        uploadDrawnItems = new L.FeatureGroup();
+        uploadMap.addLayer(uploadDrawnItems);
+        addDrawingControlsFor(uploadMap, uploadDrawnItems);
+        setupMapResizeObserverFor(uploadMap, 'uploadMapCanvas');
+    } catch (e) {
+        console.error('Upload map init failed', e);
+    }
+}
+
 function addResilientTileLayer() {
     const providers = [
         {
@@ -871,7 +933,11 @@ function addResilientTileLayer() {
             attribution: prov.attribution,
             maxZoom: 22,
             minZoom: 10,
-            crossOrigin: true
+            crossOrigin: true,
+            keepBuffer: 8,
+            updateWhenIdle: true,
+            updateWhenZooming: false,
+            detectRetina: true
         }).addTo(map);
         // If the first tile errors, switch provider once
         let switched = false;
@@ -887,12 +953,65 @@ function addResilientTileLayer() {
     add(current);
 }
 
+function addResilientTileLayerFor(targetMap) {
+    const providers = [
+        { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '© OpenStreetMap contributors' },
+        { url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', attribution: '© OpenStreetMap contributors, HOT' },
+        { url: 'https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png', attribution: '© OpenStreetMap contributors (DE)' }
+    ];
+    let i = 0; let layer = null; let switched = false;
+    const add = () => {
+        const p = providers[i]; if (!p) return;
+        layer = L.tileLayer(p.url, { attribution: p.attribution, maxZoom: 22, minZoom: 10, crossOrigin: true, keepBuffer: 8, updateWhenIdle: true, updateWhenZooming: false, detectRetina: true }).addTo(targetMap);
+        layer.on('tileerror', () => {
+            if (switched) return; switched = true; targetMap.removeLayer(layer); i += 1; add();
+        });
+    };
+    add();
+}
+
+function addDrawingControlsFor(targetMap, featureGroup) {
+    const drawControl = new L.Control.Draw({
+        position: 'topright',
+        draw: {
+            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#007BFF', fillColor: '#007BFF', fillOpacity: 0.3, weight: 3 } },
+            rectangle: { showArea: true, shapeOptions: { color: '#28a745', fillColor: '#28a745', fillOpacity: 0.3, weight: 3 } },
+            polyline: false, circle: false, marker: false, circlemarker: false
+        },
+        edit: { featureGroup: featureGroup, remove: true }
+    });
+    targetMap.addControl(drawControl);
+    targetMap.on(L.Draw.Event.CREATED, function (e) {
+        const layer = e.layer; layer.polygonId = 'upload-' + Date.now(); featureGroup.addLayer(layer);
+        showNotification('Boundary added to survey', 'success');
+    });
+}
+
+function activateUploadPolygonTool() {
+    showNotification('Upload: Polygon tool activated', 'info');
+}
+
+function activateUploadZoomTool() {
+    if (uploadMap) uploadMap.setZoom(18);
+}
+
 function setupMapResizeObserver() {
     const el = document.getElementById('mapCanvas');
     if (!el || !window.ResizeObserver) return;
     const ro = new ResizeObserver(() => {
         if (map) {
             map.invalidateSize(false);
+        }
+    });
+    ro.observe(el);
+}
+
+function setupMapResizeObserverFor(targetMap, elementId) {
+    const el = document.getElementById(elementId);
+    if (!el || !window.ResizeObserver) return;
+    const ro = new ResizeObserver(() => {
+        if (targetMap) {
+            targetMap.invalidateSize(false);
         }
     });
     ro.observe(el);
@@ -1224,6 +1343,9 @@ function updateApprovalsList() {
         return;
     }
     
+    // Role-based access: only admin and verifier can approve/reject
+    const canApprove = currentUser === 'admin' || currentUser === 'verifier';
+    
     container.innerHTML = pendingApprovals.map(approval => `
         <div class="approval-card">
             <div class="approval-header">
@@ -1257,6 +1379,7 @@ function updateApprovalsList() {
                 </div>
             </div>
             <div class="approval-actions">
+                ${canApprove ? `
                 <button class="btn btn-success" onclick="approveSurvey('${approval.id}')">
                     <i class="fas fa-check"></i>
                     Approve & Tokenize
@@ -1265,6 +1388,7 @@ function updateApprovalsList() {
                     <i class="fas fa-times"></i>
                     Reject
                 </button>
+                ` : ''}
                 <button class="btn btn-outline" onclick="viewSurveyDetails('${approval.id}')">
                     <i class="fas fa-eye"></i>
                     View Details
@@ -1329,6 +1453,19 @@ function approveSurvey(approvalId) {
     // Update UI
     updateApprovalsList();
     updateStats();
+    // Update submissions history
+    const sub = submissionsStore.find(s => s.id === approvalId);
+    if (sub) {
+        sub.status = 'approved';
+        sub.tokenId = tokenId;
+        sub.plotCode = plotCode;
+        sub.updatedAt = new Date().toISOString();
+        persistStores();
+        // If the approved submission belongs to the logged-in user, show congrats banner next time they open My Submissions
+        if (userData && sub.submittedBy === userData.email) {
+            setTimeout(renderSubmissions, 50);
+        }
+    }
     
     // Show success message and plot dashboard
     showNotification(`Survey approved and tokenized successfully! Token ID: ${tokenId}`, 'success');
@@ -1348,6 +1485,14 @@ function rejectSurvey(approvalId) {
     // Update UI
     updateApprovalsList();
     updateStats();
+    // Update submissions history
+    const sub = submissionsStore.find(s => s.id === approvalId);
+    if (sub) {
+        sub.status = 'rejected';
+        sub.updatedAt = new Date().toISOString();
+        persistStores();
+        setTimeout(renderSubmissions, 50);
+    }
     
     showNotification('Survey rejected.', 'info');
 }
@@ -1832,7 +1977,7 @@ function renderConsentCenter() {
     const container = document.getElementById('consentCenter');
     if (!container) return;
     const myRole = currentUser;
-    const isOwner = myRole === 'landowner';
+    const isOwner = myRole === 'user';
     const list = consentRequestsStore.filter(r => isOwner ? r.status === 'pending' : true);
     if (list.length === 0) {
         container.innerHTML = '<div class="no-results">No consent activity.</div>';
@@ -1861,6 +2006,10 @@ function approveConsent(id) {
     if (!r) return;
     r.status = 'approved';
     verificationLogsStore.push({ who: userData?.email || 'owner', method: 'consent-approve', ts: new Date().toISOString(), proof_hash: r.id });
+    // Grant access to requester
+    if (r.requesterRole === 'client' || r.requesterRole === 'user') {
+        clientAccessStore.push({ clientEmail: r.requesterName || 'client', plotCode: r.plotCode, scope: r.scope, approvedAt: new Date().toISOString() });
+    }
     persistStores();
     renderConsentCenter();
     showNotification('Consent approved. Access logged on-chain (simulated).', 'success');
@@ -1874,6 +2023,35 @@ function denyConsent(id) {
     persistStores();
     renderConsentCenter();
     showNotification('Consent denied.', 'info');
+}
+
+function renderAccessList() {
+    const container = document.getElementById('accessList');
+    if (!container) return;
+    const email = userData?.email || '';
+    const mine = clientAccessStore.filter(a => a.clientEmail === (userData?.name || 'client') || a.clientEmail === email);
+    if (mine.length === 0) {
+        container.innerHTML = '<div class="no-data">No granted access yet.</div>';
+        return;
+    }
+    container.innerHTML = mine.map(a => {
+        const pdata = JSON.parse(localStorage.getItem(`plot_${a.plotCode}`) || 'null');
+        const title = pdata ? pdata.plotCode : a.plotCode;
+        return `
+        <div class="approval-card">
+            <div class="approval-header">
+                <h3 class="approval-title">${title}</h3>
+                <span class="status-badge approved">APPROVED</span>
+            </div>
+            <div class="approval-details">
+                <div class="detail-item"><span class="detail-label">Scope</span><span class="detail-value">${(a.scope||[]).join(', ')}</span></div>
+                <div class="detail-item"><span class="detail-label">Granted</span><span class="detail-value">${new Date(a.approvedAt).toLocaleString()}</span></div>
+            </div>
+            <div class="approval-actions">
+                <button class="btn btn-outline" onclick="openPropertyDemo('${a.plotCode}','Property')"><i class="fas fa-eye"></i> View</button>
+            </div>
+        </div>`;
+    }).join('');
 }
 
 function mintToken(plotCode) {
@@ -2364,6 +2542,9 @@ async function anchorBatch() {
     persistStores();
     renderGovDocsList();
     showNotification(`Anchored Merkle root ${root.slice(0, 10)}... Tx ${txHash.slice(0, 10)}...`, 'success');
+    if (typeof logActivity === 'function') {
+        logActivity('anchor', 'Batch anchored', { root: root.slice(0,10), tx: txHash.slice(0,10) });
+    }
 }
 
 function updateStats() {
@@ -2373,6 +2554,35 @@ function updateStats() {
     
     // Update stats display (simplified)
     console.log(`Updated stats: ${pendingCount} pending, ${approvedCount} approved`);
+}
+
+// ===== Activity & Notifications =====
+function logActivity(type, message, meta) {
+    activityStore.push({ id: generateId(), type, message, meta: meta || {}, ts: new Date().toISOString() });
+    persistStores();
+}
+
+function renderNotifications() {
+    const list = document.getElementById('notificationsList');
+    if (!list) return;
+    if (!activityStore || activityStore.length === 0) {
+        list.innerHTML = '<div class="no-data">No activity yet.</div>';
+        return;
+    }
+    const items = [...activityStore].sort((a,b)=> new Date(b.ts)-new Date(a.ts)).slice(0, 50);
+    list.innerHTML = items.map(a => `
+        <div class="approval-card">
+            <div class="approval-header">
+                <h3 class="approval-title">${a.message}</h3>
+                <span class="status-badge approved">${a.type.replace(/_/g,' ').toUpperCase()}</span>
+            </div>
+            <div class="approval-details">
+                <div class="detail-item"><span class="detail-label">Time</span><span class="detail-value">${new Date(a.ts).toLocaleString()}</span></div>
+                ${a.meta && a.meta.tokenId ? `<div class=\"detail-item\"><span class=\"detail-label\">Token</span><span class=\"detail-value\">${a.meta.tokenId}</span></div>` : ''}
+                ${a.meta && a.meta.plotCode ? `<div class=\"detail-item\"><span class=\"detail-label\">Plot</span><span class=\"detail-value\">${a.meta.plotCode}</span></div>` : ''}
+            </div>
+        </div>
+    `).join('');
 }
 
 function showNotification(message, type = 'info') {
@@ -2398,74 +2608,7 @@ function showNotification(message, type = 'info') {
 }
 
 // ===== Assets: Export Logo as PNG =====
-function downloadLogoPng() {
-    const size = 512;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-
-    // Transparent background
-    ctx.clearRect(0, 0, size, size);
-
-    // Draw rounded square base
-    const baseSize = 400;
-    const baseX = (size - baseSize) / 2;
-    const baseY = (size - baseSize) / 2;
-    const radius = 40;
-    roundedRect(ctx, baseX, baseY, baseSize, baseSize, radius);
-    ctx.fillStyle = '#007BFF';
-    ctx.fill();
-
-    // Draw simple map/pin glyph (geometric)
-    ctx.save();
-    ctx.translate(size / 2, size / 2 - 30);
-    // Pin body
-    ctx.beginPath();
-    ctx.moveTo(0, -110);
-    ctx.quadraticCurveTo(90, -110, 90, -20);
-    ctx.quadraticCurveTo(90, 30, 0, 120);
-    ctx.quadraticCurveTo(-90, 30, -90, -20);
-    ctx.quadraticCurveTo(-90, -110, 0, -110);
-    ctx.closePath();
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    // Inner circle
-    ctx.beginPath();
-    ctx.arc(0, -40, 28, 0, Math.PI * 2);
-    ctx.fillStyle = '#007BFF';
-    ctx.fill();
-    ctx.restore();
-
-    // Brand text
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 72px Inter, Segoe UI, Roboto, Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Naks.io', size / 2, size - 90);
-
-    // Trigger download
-    const url = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'naksio-logo.png';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-}
-
-function roundedRect(ctx, x, y, width, height, radius) {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-}
+// removed logo download utilities
 
 function loadMockData() {
     // Load registered users from localStorage
@@ -2473,38 +2616,42 @@ function loadMockData() {
     if (savedUsers) {
         registeredUsers = JSON.parse(savedUsers);
         console.log('Loaded users from localStorage:', registeredUsers);
+        // Migrate old demo roles to new roles (user/admin/client)
+        const hasNewRole = registeredUsers.some(u => ['user','admin','client'].includes(u.role));
+        const hasDemoUser = registeredUsers.some(u => u.email === 'user@demo.com');
+        const hasDemoAdmin = registeredUsers.some(u => u.email === 'admin@demo.com');
+        if (!hasNewRole || !hasDemoUser || !hasDemoAdmin) {
+            registeredUsers = [
+                { id: 'user-1', name: 'John Smith', email: 'user@demo.com', password: 'password123', role: 'user', phone: '+91 98765 43210', createdAt: new Date().toISOString() },
+                { id: 'user-2', name: 'Client One', email: 'client@demo.com', password: 'password123', role: 'client', phone: '+91 98765 43211', createdAt: new Date().toISOString() },
+                { id: 'user-3', name: 'Admin User', email: 'admin@demo.com', password: 'password123', role: 'admin', phone: '+91 98765 43213', createdAt: new Date().toISOString() }
+            ];
+            localStorage.setItem('naksio_users', JSON.stringify(registeredUsers));
+            console.log('Migrated users to new role model');
+        }
     } else {
         // Create some demo users
         registeredUsers = [
             {
                 id: 'user-1',
                 name: 'John Smith',
-                email: 'landowner@demo.com',
+                email: 'user@demo.com',
                 password: 'password123',
-                role: 'landowner',
+                role: 'user',
                 phone: '+91 98765 43210',
                 createdAt: new Date().toISOString()
             },
             {
                 id: 'user-2',
-                name: 'Sarah Johnson',
-                email: 'investor@demo.com',
+                name: 'Client One',
+                email: 'client@demo.com',
                 password: 'password123',
-                role: 'investor',
+                role: 'client',
                 phone: '+91 98765 43211',
                 createdAt: new Date().toISOString()
             },
             {
                 id: 'user-3',
-                name: 'Dr. Raj Kumar',
-                email: 'verifier@demo.com',
-                password: 'password123',
-                role: 'verifier',
-                phone: '+91 98765 43212',
-                createdAt: new Date().toISOString()
-            },
-            {
-                id: 'user-4',
                 name: 'Admin User',
                 email: 'admin@demo.com',
                 password: 'password123',
