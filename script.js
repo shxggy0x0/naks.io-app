@@ -32,6 +32,7 @@ function renderSubmissions() {
             <div class="approval-details">
                 <div class="detail-item"><span class="detail-label">District</span><span class="detail-value">${s.details?.district || ''}</span></div>
                 <div class="detail-item"><span class="detail-label">Village</span><span class="detail-value">${s.details?.village || ''}</span></div>
+                ${s.details?.ownerName ? `<div class="detail-item"><span class="detail-label">Owner Name</span><span class="detail-value">${s.details.ownerName}</span></div>` : ''}
                 <div class="detail-item"><span class="detail-label">Updated</span><span class="detail-value">${new Date(s.updatedAt).toLocaleString()}</span></div>
                 ${s.tokenId ? `<div class="detail-item"><span class="detail-label">Token ID</span><span class="detail-value">${s.tokenId}</span></div>` : ''}
             </div>
@@ -125,6 +126,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
     loadMockData();
     loadPersistentStores();
+    updateUserSubmission1(); // Update submission 1 for user role
     checkAuthStatus();
 });
 
@@ -146,6 +148,11 @@ function loadPersistentStores() {
     clientAccessStore = JSON.parse(localStorage.getItem('naks_client_access') || '[]');
     submissionsStore = JSON.parse(localStorage.getItem('naks_submissions') || '[]');
     activityStore = JSON.parse(localStorage.getItem('naks_activity') || '[]');
+    // Load pendingApprovals from localStorage, but merge with mock data if empty
+    const savedApprovals = JSON.parse(localStorage.getItem('naks_pending_approvals') || '[]');
+    if (savedApprovals.length > 0) {
+        pendingApprovals = savedApprovals;
+    }
 }
 
 function persistStores() {
@@ -160,6 +167,86 @@ function persistStores() {
     localStorage.setItem('naks_client_access', JSON.stringify(clientAccessStore));
     localStorage.setItem('naks_submissions', JSON.stringify(submissionsStore));
     localStorage.setItem('naks_activity', JSON.stringify(activityStore));
+    localStorage.setItem('naks_pending_approvals', JSON.stringify(pendingApprovals));
+}
+
+// ===== Update Submission 1 for User Role =====
+function updateUserSubmission1() {
+    const submissionDetails = {
+        district: 'bengaluru',
+        taluk: 'bangalore-south',
+        hobli: 'beguru-3',
+        village: 'beguru',
+        surveyNumber: '221',
+        ownerName: 'G. Nandakumar',
+        surnoc: 'surnoc1', // Default value if not specified
+        hissa: 'hissa1', // Default value if not specified
+        period: '2024' // Default value if not specified
+    };
+    
+    // Find the first submission for a user role
+    const userSubmission = submissionsStore.find(s => {
+        // Check if submittedBy is a user email (contains 'user@demo.com' or similar)
+        return s.submittedBy && (s.submittedBy.includes('user@demo.com') || s.submittedBy.includes('user'));
+    });
+    
+    let submissionId;
+    if (userSubmission) {
+        // Update the submission details
+        userSubmission.details = {
+            ...userSubmission.details,
+            ...submissionDetails
+        };
+        userSubmission.updatedAt = new Date().toISOString();
+        submissionId = userSubmission.id;
+        persistStores();
+        console.log('Updated user submission 1:', userSubmission);
+    } else {
+        // If no submission exists, create one
+        submissionId = generateId();
+        const newSubmission = {
+            id: submissionId,
+            status: 'pending',
+            submittedBy: 'user@demo.com',
+            details: submissionDetails,
+            updatedAt: new Date().toISOString()
+        };
+        submissionsStore.push(newSubmission);
+        persistStores();
+        console.log('Created new user submission 1:', newSubmission);
+    }
+    
+    // Also add/update in pendingApprovals for admin panel visibility
+    const existingApproval = pendingApprovals.find(a => a.id === submissionId);
+    if (existingApproval) {
+        // Update existing approval
+        Object.assign(existingApproval, {
+            ...submissionDetails,
+            status: 'pending',
+            submittedAt: existingApproval.submittedAt || new Date().toISOString(),
+            submittedBy: existingApproval.submittedBy || 'user@demo.com',
+            files: existingApproval.files || []
+        });
+    } else {
+        // Create new approval entry
+        const newApproval = {
+            id: submissionId,
+            ...submissionDetails,
+            status: 'pending',
+            submittedAt: new Date().toISOString(),
+            submittedBy: 'user@demo.com',
+            files: [] // Empty files array, can be updated later
+        };
+        pendingApprovals.push(newApproval);
+    }
+    
+    // Persist the updated pendingApprovals
+    persistStores();
+    
+    // Update approvals list if admin is viewing
+    if (currentUser === 'admin') {
+        updateApprovalsList();
+    }
 }
 
 // ===== Crypto & Merkle Utilities =====
@@ -372,6 +459,9 @@ function showSection(sectionName) {
     }
     if (sectionName === 'submissions') {
         setTimeout(renderSubmissions, 50);
+    }
+    if (sectionName === 'approvals') {
+        setTimeout(updateApprovalsList, 50);
     }
 }
 
@@ -1362,9 +1452,17 @@ function updateApprovalsList() {
                     <span class="detail-value">${approval.taluk}</span>
                 </div>
                 <div class="detail-item">
+                    <span class="detail-label">Hobli</span>
+                    <span class="detail-value">${approval.hobli || ''}</span>
+                </div>
+                <div class="detail-item">
                     <span class="detail-label">Village</span>
                     <span class="detail-value">${approval.village}</span>
                 </div>
+                ${approval.ownerName ? `<div class="detail-item">
+                    <span class="detail-label">Owner Name</span>
+                    <span class="detail-value">${approval.ownerName}</span>
+                </div>` : ''}
                 <div class="detail-item">
                     <span class="detail-label">Submitted By</span>
                     <span class="detail-value">${approval.submittedBy}</span>
@@ -1375,7 +1473,7 @@ function updateApprovalsList() {
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Files</span>
-                    <span class="detail-value">${approval.files.length} documents</span>
+                    <span class="detail-value">${approval.files ? approval.files.length : 0} documents</span>
                 </div>
             </div>
             <div class="approval-actions">
@@ -2664,39 +2762,42 @@ function loadMockData() {
         console.log('Created demo users:', registeredUsers);
     }
     
-    // Load some mock data for demonstration
-    pendingApprovals = [
-        {
-            id: 'approval-1',
-            district: 'bangalore',
-            taluk: 'bangalore-south',
-            hobli: 'hobli1',
-            village: 'village1',
-            surnoc: 'surnoc1',
-            hissa: 'hissa1',
-            period: '2024',
-            surveyNumber: '12347',
-            status: 'pending',
-            submittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-            submittedBy: 'landowner@demo.com',
-            files: [{ name: 'survey.pdf', size: '2.5 MB' }]
-        },
-        {
-            id: 'approval-2',
-            district: 'mysore',
-            taluk: 'bangalore-north',
-            hobli: 'hobli2',
-            village: 'village2',
-            surnoc: 'surnoc2',
-            hissa: 'hissa2',
-            period: '2024',
-            surveyNumber: '12348',
-            status: 'pending',
-            submittedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-            submittedBy: 'landowner@demo.com',
-            files: [{ name: 'ownership.pdf', size: '1.8 MB' }, { name: 'survey.jpg', size: '3.2 MB' }]
-        }
-    ];
+    // Load some mock data for demonstration (only if pendingApprovals is empty)
+    if (pendingApprovals.length === 0) {
+        pendingApprovals = [
+            {
+                id: 'approval-1',
+                district: 'bangalore',
+                taluk: 'bangalore-south',
+                hobli: 'hobli1',
+                village: 'village1',
+                surnoc: 'surnoc1',
+                hissa: 'hissa1',
+                period: '2024',
+                surveyNumber: '12347',
+                status: 'pending',
+                submittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                submittedBy: 'landowner@demo.com',
+                files: [{ name: 'survey.pdf', size: '2.5 MB' }]
+            },
+            {
+                id: 'approval-2',
+                district: 'mysore',
+                taluk: 'bangalore-north',
+                hobli: 'hobli2',
+                village: 'village2',
+                surnoc: 'surnoc2',
+                hissa: 'hissa2',
+                period: '2024',
+                surveyNumber: '12348',
+                status: 'pending',
+                submittedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+                submittedBy: 'landowner@demo.com',
+                files: [{ name: 'ownership.pdf', size: '1.8 MB' }, { name: 'survey.jpg', size: '3.2 MB' }]
+            }
+        ];
+        persistStores();
+    }
     
     updateApprovalsList();
 
