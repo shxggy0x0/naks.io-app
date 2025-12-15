@@ -126,7 +126,8 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
     loadMockData();
     loadPersistentStores();
-    updateUserSubmission1(); // Update submission 1 for user role
+    updateUserSubmission1(); // Update submission 1 for user role and auto-approve G. Nandakumar
+    updateGNandakumarPlots(); // Ensure G. Nandakumar's plots have insurance set to None
     checkAuthStatus();
 });
 
@@ -168,6 +169,150 @@ function persistStores() {
     localStorage.setItem('naks_submissions', JSON.stringify(submissionsStore));
     localStorage.setItem('naks_activity', JSON.stringify(activityStore));
     localStorage.setItem('naks_pending_approvals', JSON.stringify(pendingApprovals));
+}
+
+// ===== Update G. Nandakumar's existing plot data to ensure insurance is None =====
+function updateGNandakumarPlots() {
+    // Check all stored plots and update G. Nandakumar's insurance to None
+    const tokenMappings = JSON.parse(localStorage.getItem('token_mappings') || '[]');
+    tokenMappings.forEach(mapping => {
+        const plotDataStr = localStorage.getItem(`plot_${mapping.plotCode}`);
+        if (plotDataStr) {
+            try {
+                const plotData = JSON.parse(plotDataStr);
+                const ownerName = plotData.ownership?.owner || '';
+                if (ownerName === 'G. Nandakumar' || ownerName.includes('Nandakumar')) {
+                    plotData.insurance = {
+                        status: 'None',
+                        provider: 'N/A',
+                        policyNumber: 'N/A',
+                        coverageAmount: 0,
+                        expiryDate: null
+                    };
+                    localStorage.setItem(`plot_${mapping.plotCode}`, JSON.stringify(plotData));
+                    if (plotData.tokenId) {
+                        localStorage.setItem(`token_${plotData.tokenId}`, JSON.stringify(plotData));
+                    }
+                }
+            } catch (e) {
+                console.error('Error updating plot data:', e);
+            }
+        }
+    });
+}
+
+// ===== Auto-approve G. Nandakumar's submission =====
+function autoApproveGNandakumarSubmission() {
+    // Find G. Nandakumar's submission
+    const nandakumarSubmission = submissionsStore.find(s => {
+        const ownerName = s.details?.ownerName || '';
+        return ownerName === 'G. Nandakumar' || ownerName.includes('Nandakumar');
+    });
+    
+    if (!nandakumarSubmission) return;
+    
+    // If already approved, just ensure plot data exists and insurance is None
+    if (nandakumarSubmission.status === 'approved' && nandakumarSubmission.plotCode) {
+        const plotDataStr = localStorage.getItem(`plot_${nandakumarSubmission.plotCode}`);
+        if (plotDataStr) {
+            try {
+                const plotData = JSON.parse(plotDataStr);
+                plotData.insurance = {
+                    status: 'None',
+                    provider: 'N/A',
+                    policyNumber: 'N/A',
+                    coverageAmount: 0,
+                    expiryDate: null
+                };
+                localStorage.setItem(`plot_${nandakumarSubmission.plotCode}`, JSON.stringify(plotData));
+                if (plotData.tokenId) {
+                    localStorage.setItem(`token_${plotData.tokenId}`, JSON.stringify(plotData));
+                }
+            } catch (e) {
+                console.error('Error updating plot data:', e);
+            }
+        }
+        return;
+    }
+    
+    // If pending, approve it automatically
+    if (nandakumarSubmission.status === 'pending') {
+        const approval = {
+            ...nandakumarSubmission.details,
+            id: nandakumarSubmission.id,
+            status: 'approved',
+            submittedAt: nandakumarSubmission.updatedAt || new Date().toISOString(),
+            submittedBy: nandakumarSubmission.submittedBy || 'user@demo.com',
+            files: []
+        };
+        
+        // Generate unique plot code and token ID
+        const plotCode = generatePlotCode();
+        const tokenId = generateTokenId();
+        
+        // Create token
+        const token = {
+            id: tokenId,
+            plotCode: plotCode,
+            surveyId: nandakumarSubmission.id,
+            surveyData: approval,
+            tokenHash: generateTokenHash(),
+            ipfsHash: generateIPFSHash(),
+            blockNumber: generateBlockNumber(),
+            transactionHash: generateTransactionHash(),
+            createdAt: new Date().toISOString(),
+            status: 'minted'
+        };
+        
+        // Create plot data with insurance set to None
+        const plotData = createMockPlotData(plotCode, approval, token);
+        plotData.insurance = {
+            status: 'None',
+            provider: 'N/A',
+            policyNumber: 'N/A',
+            coverageAmount: 0,
+            expiryDate: null
+        };
+        
+        // Store plot data
+        plotData.tokenization.tokenId = tokenId;
+        plotData.tokenization.status = 'Minted';
+        localStorage.setItem(`plot_${plotCode}`, JSON.stringify(plotData));
+        localStorage.setItem(`token_${tokenId}`, JSON.stringify(plotData));
+        
+        // Store token mapping
+        const tokenMappings = JSON.parse(localStorage.getItem('token_mappings') || '[]');
+        const existingMapping = tokenMappings.find(m => m.tokenId === tokenId);
+        if (!existingMapping) {
+            tokenMappings.push({
+                tokenId: tokenId,
+                plotCode: plotCode,
+                surveyNumber: approval.surveyNumber,
+                district: approval.district,
+                village: approval.village,
+                createdAt: new Date().toISOString()
+            });
+            localStorage.setItem('token_mappings', JSON.stringify(tokenMappings));
+        }
+        
+        // Update submission status
+        nandakumarSubmission.status = 'approved';
+        nandakumarSubmission.tokenId = tokenId;
+        nandakumarSubmission.plotCode = plotCode;
+        nandakumarSubmission.updatedAt = new Date().toISOString();
+        
+        // Remove from pendingApprovals if it exists there
+        pendingApprovals = pendingApprovals.filter(a => a.id !== nandakumarSubmission.id);
+        
+        // Persist everything
+        persistStores();
+        
+        console.log('Auto-approved G. Nandakumar submission:', {
+            plotCode,
+            tokenId,
+            insurance: 'None'
+        });
+    }
 }
 
 // ===== Update Submission 1 for User Role =====
@@ -216,32 +361,43 @@ function updateUserSubmission1() {
         console.log('Created new user submission 1:', newSubmission);
     }
     
-    // Also add/update in pendingApprovals for admin panel visibility
+    // Also add/update in pendingApprovals for admin panel visibility (only if not approved)
     const existingApproval = pendingApprovals.find(a => a.id === submissionId);
-    if (existingApproval) {
-        // Update existing approval
-        Object.assign(existingApproval, {
-            ...submissionDetails,
-            status: 'pending',
-            submittedAt: existingApproval.submittedAt || new Date().toISOString(),
-            submittedBy: existingApproval.submittedBy || 'user@demo.com',
-            files: existingApproval.files || []
-        });
-    } else {
-        // Create new approval entry
-        const newApproval = {
-            id: submissionId,
-            ...submissionDetails,
-            status: 'pending',
-            submittedAt: new Date().toISOString(),
-            submittedBy: 'user@demo.com',
-            files: [] // Empty files array, can be updated later
-        };
-        pendingApprovals.push(newApproval);
+    const submission = submissionsStore.find(s => s.id === submissionId);
+    
+    // Only add to pendingApprovals if the submission is still pending
+    if (submission && submission.status === 'pending') {
+        if (existingApproval) {
+            // Update existing approval
+            Object.assign(existingApproval, {
+                ...submissionDetails,
+                status: 'pending',
+                submittedAt: existingApproval.submittedAt || new Date().toISOString(),
+                submittedBy: existingApproval.submittedBy || 'user@demo.com',
+                files: existingApproval.files || []
+            });
+        } else {
+            // Create new approval entry
+            const newApproval = {
+                id: submissionId,
+                ...submissionDetails,
+                status: 'pending',
+                submittedAt: new Date().toISOString(),
+                submittedBy: 'user@demo.com',
+                files: [] // Empty files array, can be updated later
+            };
+            pendingApprovals.push(newApproval);
+        }
+    } else if (existingApproval && submission && submission.status === 'approved') {
+        // Remove from pendingApprovals if it's already approved
+        pendingApprovals = pendingApprovals.filter(a => a.id !== submissionId);
     }
     
     // Persist the updated pendingApprovals
     persistStores();
+    
+    // Auto-approve G. Nandakumar's submission
+    autoApproveGNandakumarSubmission();
     
     // Update approvals list if admin is viewing
     if (currentUser === 'admin') {
@@ -1524,6 +1680,18 @@ function approveSurvey(approvalId) {
     // Create comprehensive plot data with NAKS score card
     const plotData = createMockPlotData(plotCode, approval, token);
     
+    // Ensure G. Nandakumar's insurance is set to None
+    const ownerName = approval.ownerName || approval.details?.ownerName || plotData.ownership.owner;
+    if (ownerName === 'G. Nandakumar' || ownerName.includes('Nandakumar')) {
+        plotData.insurance = {
+            status: 'None',
+            provider: 'N/A',
+            policyNumber: 'N/A',
+            coverageAmount: 0,
+            expiryDate: null
+        };
+    }
+    
     // Add to tokenized lands
     tokenizedLands.push(token);
     
@@ -1629,7 +1797,13 @@ function createMockPlotData(plotCode, approval, token) {
     ];
     
     const loanStatuses = ['Active', 'Paid Off', 'Default', 'No Loan'];
-    const insuranceStatuses = ['Insured', 'Not Insured', 'Expired', 'Under Review'];
+    const insuranceStatuses = ['Insured', 'Not Insured', 'Expired', 'Under Review', 'None'];
+    
+    // Get owner name
+    const ownerName = approval.ownerName || approval.details?.ownerName || mockOwners[Math.floor(Math.random() * mockOwners.length)];
+    
+    // Check if this is G. Nandakumar's submission - set insurance to None
+    const isGNandakumar = ownerName === 'G. Nandakumar' || ownerName.includes('Nandakumar');
     
     // Generate comprehensive NAKS score card
     const naksScore = generateNAKSScore();
@@ -1639,7 +1813,7 @@ function createMockPlotData(plotCode, approval, token) {
         tokenId: token.id,
         surveyData: approval,
         ownership: {
-            owner: mockOwners[Math.floor(Math.random() * mockOwners.length)],
+            owner: ownerName,
             coOwners: [],
             ownershipPercentage: 100,
             registrationDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString(),
@@ -1653,11 +1827,11 @@ function createMockPlotData(plotCode, approval, token) {
             remainingBalance: Math.floor(Math.random() * 3000000) + 200000
         },
         insurance: {
-            status: insuranceStatuses[Math.floor(Math.random() * insuranceStatuses.length)],
-            provider: 'Agricultural Insurance Company',
-            policyNumber: `POL-${Math.floor(Math.random() * 999999)}`,
-            coverageAmount: Math.floor(Math.random() * 2000000) + 1000000,
-            expiryDate: new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString()
+            status: isGNandakumar ? 'None' : insuranceStatuses[Math.floor(Math.random() * insuranceStatuses.length)],
+            provider: isGNandakumar ? 'N/A' : 'Agricultural Insurance Company',
+            policyNumber: isGNandakumar ? 'N/A' : `POL-${Math.floor(Math.random() * 999999)}`,
+            coverageAmount: isGNandakumar ? 0 : Math.floor(Math.random() * 2000000) + 1000000,
+            expiryDate: isGNandakumar ? null : new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString()
         },
         naksScoreCard: naksScore,
         riskAssessment: {
